@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+frontend/dist/
+
+# .NET build
+backend/bin/
+backend/obj/
+backend/_build_check/
+**/bin/
+**/obj/
+
+# Environment & secrets（切勿提交）
+.env
+.env.*
+!.env.example
+
+# Local temp / debug
+_tmp_*.json
+*.log
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

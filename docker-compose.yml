@@ -1,0 +1,38 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "5000:8080"
+    environment:
+      - ASPNETCORE_URLS=http://+:8080
+      - Redis__ConnectionString=redis:6379
+      - BaiduMap__Ak=${BAIDU_MAP_AK:-}
+      - Llm__ApiBaseUrl=${LLM_API_BASE_URL:-}
+      - Llm__ApiKey=${LLM_API_KEY:-}
+      - Llm__Model=${LLM_MODEL:-}
+      - Agent__MaxConcurrency=${AGENT_MAX_CONCURRENCY:-4}
+    depends_on:
+      - redis
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_BAIDU_MAP_AK: ${VITE_BAIDU_MAP_AK:-}
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  redis-data:
