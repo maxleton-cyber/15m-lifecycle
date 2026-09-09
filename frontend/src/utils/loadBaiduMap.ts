@@ -30,11 +30,9 @@ export function loadBaiduMap(): Promise<void> {
   if (loading) return loading
 
   loading = new Promise((resolve, reject) => {
-    const win = window as Window & { [key: string]: unknown }
-
     const cleanup = () => {
       clearTimeout(timer)
-      delete win[CALLBACK_NAME]
+      delete window.__baiduMapGlInit__
     }
 
     const fail = (message: string) => {
@@ -47,7 +45,7 @@ export function loadBaiduMap(): Promise<void> {
       fail('百度地图 API 加载超时，请检查 AK 是否有效、Referer 白名单是否包含当前域名')
     }, 20000)
 
-    win[CALLBACK_NAME] = () => {
+    window.__baiduMapGlInit__ = () => {
       cleanup()
       if (window.BMapGL) {
         ensureBmapCss()

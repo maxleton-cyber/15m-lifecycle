@@ -90,4 +90,6 @@ declare namespace BMapGL {
 
 interface Window {
   BMapGL: typeof BMapGL
+  /** 百度地图 GL 动态加载 callback（见 loadBaiduMap.ts） */
+  __baiduMapGlInit__?: () => void
 }
