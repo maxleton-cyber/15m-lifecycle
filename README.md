@@ -38,7 +38,9 @@
 ├── .github/workflows/       # GitHub Actions CI
 ├── docker-compose.yml
 ├── .env.example             # 环境变量模板（提交到仓库）
-└── docs/                    # 需求与架构文档
+├── docs/                    # 需求、架构与开发文档
+│   ├── requirements-and-architecture.md
+│   └── AGENT.md
 ```
 
 ## 快速开始
@@ -152,8 +154,8 @@ GitHub Actions（`.github/workflows/ci.yml`）在 push / PR 时自动执行：
 
 ## 文档
 
-- [需求与架构文档](./15分钟生活圈体检助手-需求与架构文档.md)
-- [Agent 开发说明](./AGENT.md)
+- [需求与架构文档](./docs/requirements-and-architecture.md)
+- [Agent 开发说明](./docs/AGENT.md)
 
 ## 许可证
 
