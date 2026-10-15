@@ -77,10 +77,12 @@ declare namespace BMapGL {
     latlng: Point
     point: Point
     domEvent?: Event
+    stopPropagation?: () => void
   }
 
   abstract class Overlay {
     addEventListener(event: string, handler: (e?: Event) => void): void
+    setZIndex?(zIndex: number): void
   }
 
   const BMAP_NORMAL_MAP: number

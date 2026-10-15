@@ -4,7 +4,6 @@ import type {
   AgentTaskResult,
   GeocodeResult,
   PlaceSuggestion,
-  QuotaStatus,
   RegionNode,
 } from '../types'
 
@@ -70,9 +69,4 @@ export async function pollAgentTask(
     }
     poll()
   })
-}
-
-export async function getQuotaStatus(): Promise<QuotaStatus[]> {
-  const { data } = await api.get<QuotaStatus[]>('/quota/status')
-  return data
 }

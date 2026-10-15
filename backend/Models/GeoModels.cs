@@ -48,13 +48,28 @@ public record BlindSpotInfo(
     double? NearestDistanceMeters,
     string Suggestion);
 
+/// <summary>地图盲区多边形块（灰度 level = 缺失类别数）。</summary>
+public record BlindAreaRegion(
+    string Id,
+    int Level,
+    IReadOnlyList<string> MissingCategories,
+    IReadOnlyList<LatLng> Polygon,
+    double AreaM2,
+    bool Degraded);
+
+public record BlindAreaAnalysis(
+    IReadOnlyList<BlindAreaRegion> BlindRegions,
+    double BlindAreaRatio,
+    double AverageMissingCount);
+
 public record ReportData(
     string PolygonId,
     LatLng Center,
     IsochroneResult Isochrone,
     IReadOnlyList<CategoryCoverage> Categories,
     IReadOnlyList<BlindSpotInfo> BlindSpots,
-    double OverallScore);
+    double OverallScore,
+    BlindAreaAnalysis? BlindArea = null);
 
 public record QuotaStatus(
     string ApiName,

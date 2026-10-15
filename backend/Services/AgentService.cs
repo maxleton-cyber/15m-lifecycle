@@ -54,16 +54,20 @@ public class AgentService : IAgentService
     {
         try
         {
-            onProgress?.Invoke(new AgentTaskProgress("parsing", "正在解析分析目标…"));
+            onProgress?.Invoke(new AgentTaskProgress("parsing", "正在解析分析位置…"));
             var center = await ResolveCenterAsync(request, ct);
 
-            onProgress?.Invoke(new AgentTaskProgress("isochrone", "正在基于真实路网计算15分钟步行等时圈…"));
-            var isochrone = await _isochrone.ComputeAsync(center, _agentSettings.IsochroneMinutes, ct);
+            onProgress?.Invoke(new AgentTaskProgress("isochrone", "批量算路中，正在计算 15 分钟步行等时圈…"));
+            var isochrone = await _isochrone.ComputeAsync(
+                center,
+                _agentSettings.IsochroneMinutes,
+                ct,
+                stepMessage => onProgress?.Invoke(new AgentTaskProgress("isochrone", stepMessage)));
 
-            onProgress?.Invoke(new AgentTaskProgress("poi", "正在检索圈内民生设施…"));
+            onProgress?.Invoke(new AgentTaskProgress("poi", "地点检索中，正在召回圈内民生设施…"));
             var reportData = await _poiCoverage.BuildReportAsync(center, isochrone, ct);
 
-            onProgress?.Invoke(new AgentTaskProgress("report", "正在生成AI体检报告…"));
+            onProgress?.Invoke(new AgentTaskProgress("report", "AI 总结中，正在生成体检报告…"));
             var aiReport = await GenerateReportAsync(reportData, ct);
 
             return new AgentTaskResult(

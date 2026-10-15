@@ -55,9 +55,13 @@ public class BaiduMapClient : IBaiduMapClient
                 "未配置 BAIDU_MAP_AK，无法使用百度地图服务。请在环境变量中配置服务端 AK。");
     }
 
-    private async Task<JsonElement> GetBaiduJsonAsync(string url, CancellationToken ct)
+    private async Task<JsonElement> GetBaiduJsonAsync(
+        string url, CancellationToken ct, bool routeMatrix = false)
     {
-        await _rateLimiter.AcquireAsync(ct);
+        if (routeMatrix)
+            await _rateLimiter.AcquireRouteMatrixAsync(ct);
+        else
+            await _rateLimiter.AcquireAsync(ct);
         return await _http.GetFromJsonAsync<JsonElement>(url, ct);
     }
 
@@ -183,20 +187,47 @@ public class BaiduMapClient : IBaiduMapClient
         if (pending.Count == 0)
             return results;
 
-        const int maxBatchSize = 50;
-        for (var offset = 0; offset < pending.Count; offset += maxBatchSize)
-        {
-            var chunk = pending.Skip(offset).Take(maxBatchSize).ToList();
-            if (!await _quota.TryConsumeAsync("route_matrix", chunk.Count, ct))
-                throw new InvalidOperationException("步行批量算路配额已耗尽");
+        var maxBatchSize = Math.Clamp(_settings.RouteMatrixMaxDestinationsPerRequest, 1, 50);
+        var maxConcurrent = Math.Max(1, _settings.RouteMatrixMaxQps);
+        var intervalMs = Math.Max(0, _settings.RouteMatrixBatchIntervalMs);
 
-            var chunkDurations = await FetchWalkingDurationsBatchAsync(from, chunk.Select(p => p.Point).ToList(), ct);
-            for (var j = 0; j < chunk.Count; j++)
+        var chunks = new List<List<(int Index, LatLng Point)>>();
+        for (var offset = 0; offset < pending.Count; offset += maxBatchSize)
+            chunks.Add(pending.Skip(offset).Take(maxBatchSize).ToList());
+
+        _logger.LogInformation(
+            "步行批量算路: {Pending} 个终点 → {Chunks} 个请求，峰值并发 {Concurrency}，批次间隔 {Interval}ms",
+            pending.Count, chunks.Count, maxConcurrent, intervalMs);
+
+        for (var waveStart = 0; waveStart < chunks.Count; waveStart += maxConcurrent)
+        {
+            if (waveStart > 0 && intervalMs > 0)
+                await Task.Delay(intervalMs, ct);
+
+            var wave = chunks.Skip(waveStart).Take(maxConcurrent).ToList();
+            foreach (var chunk in wave)
             {
-                var (index, point) = chunk[j];
-                results[index] = chunkDurations[j];
-                var cacheKey = $"walk:{from.Lat:F5},{from.Lng:F5}:{point.Lat:F5},{point.Lng:F5}";
-                await _cache.SetAsync(cacheKey, chunkDurations[j], TimeSpan.FromDays(7), ct);
+                if (!await _quota.TryConsumeAsync("route_matrix", chunk.Count, ct))
+                    throw new InvalidOperationException("步行批量算路配额已耗尽");
+            }
+
+            var waveTasks = wave.Select(async chunk =>
+            {
+                var destinations = chunk.Select(p => p.Point).ToList();
+                var durations = await FetchWalkingDurationsBatchAsync(from, destinations, ct);
+                return (chunk, durations);
+            }).ToList();
+
+            var waveResults = await Task.WhenAll(waveTasks);
+            foreach (var (chunk, chunkDurations) in waveResults)
+            {
+                for (var j = 0; j < chunk.Count; j++)
+                {
+                    var (index, point) = chunk[j];
+                    results[index] = chunkDurations[j];
+                    var cacheKey = $"walk:{from.Lat:F5},{from.Lng:F5}:{point.Lat:F5},{point.Lng:F5}";
+                    await _cache.SetAsync(cacheKey, chunkDurations[j], TimeSpan.FromDays(7), ct);
+                }
             }
         }
 
@@ -213,7 +244,7 @@ public class BaiduMapClient : IBaiduMapClient
             $"&destinations={destinationParam}" +
             $"&coord_type=bd09ll&ak={_settings.Ak}";
 
-        var response = await GetMapApiWithRetryAsync(url, "步行批量算路", ct);
+        var response = await GetMapApiWithRetryAsync(url, "步行批量算路", ct, routeMatrix: true);
         var routeResults = response.GetProperty("result");
 
         if (routeResults.GetArrayLength() != destinations.Count)
@@ -232,11 +263,11 @@ public class BaiduMapClient : IBaiduMapClient
     }
 
     private async Task<JsonElement> GetMapApiWithRetryAsync(
-        string url, string apiName, CancellationToken ct, int maxRetries = 5)
+        string url, string apiName, CancellationToken ct, int maxRetries = 5, bool routeMatrix = false)
     {
         for (var attempt = 0; attempt <= maxRetries; attempt++)
         {
-            var response = await GetBaiduJsonAsync(url, ct);
+            var response = await GetBaiduJsonAsync(url, ct, routeMatrix);
             var status = response.GetProperty("status").GetInt32();
             if (status == 0)
                 return response;
@@ -269,15 +300,18 @@ public class BaiduMapClient : IBaiduMapClient
 
     private static readonly string[] IsochroneRecallBatches =
     [
-        "医院$诊所$社区卫生$卫生院$门诊$综合医院$医务室$药店$药房",
-        "幼儿园$小学$中学$高中$大学$学院$学校",
-        "菜市场$农贸市场$商场$百货$商铺$市场$购物$店铺",
-        "便利店$超市$大卖场$仓储",
-        "养老$敬老院$老年$护理",
+        // 基础医疗
+        "医院$诊所$社区卫生$卫生院$门诊$综合医院$口腔$中医$妇幼",
+        // 药店（含连锁品牌名，店名可能不含「药店」）
+        "药店$药房$大药房$中药店$同仁堂$老百姓$益丰$大参林$一心堂$海王星辰$国大药房$健之佳$叮当$漱玉$九芝堂$胡庆余堂",
+        // 学校：幼儿园、小学、初中、实验学校等
+        "幼儿园$托儿所$托幼$小学$附属小学$实验小学$实验学校$初中$初级中学$中学$学校",
+        // 购物：菜市场 / 超市 / 便利店
+        "菜市场$农贸市场$菜场$便利店$超市$大卖场$仓储超市",
+        "养老$敬老院$日间照料$老年活动$养老驿站$护理院",
         "地铁站$轨道交通$轻轨",
-        // 公交站单独一批，避免被地铁口/周边商户挤占分页
         "公交车站$公交站$巴士站$公共汽车站$BRT",
-        "公园$绿地$广场$花园",
+        "公园$湿地公园$森林公园$植物园$口袋公园$街心公园$公共绿地$滨江绿地$市民广场$休闲广场",
     ];
 
     public async Task<IReadOnlyList<PoiItem>> FetchPoisInIsochroneAsync(
@@ -287,7 +321,7 @@ public class BaiduMapClient : IBaiduMapClient
         CancellationToken ct = default)
     {
         var bounds = GeoUtils.FormatPolygonBounds(polygon);
-        var cacheKey = $"poi:isochrone:v5:{center.Lat:F4},{center.Lng:F4}:{radiusMeters:F0}:{bounds.GetHashCode()}";
+        var cacheKey = $"poi:isochrone:v9:{center.Lat:F4},{center.Lng:F4}:{radiusMeters:F0}:{bounds.GetHashCode()}";
         var cached = await _cache.GetAsync<List<PoiItem>>(cacheKey, ct);
         if (cached is not null) return cached;
 

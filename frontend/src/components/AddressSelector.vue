@@ -92,7 +92,7 @@ function onBlur() {
         @focus="showSuggestions = suggestions.length > 0 || isSearching"
         @blur="onBlur"
       />
-      <p class="address-hint">支持全国范围搜索，如「北京望京SOHO」「上海陆家嘴」</p>
+      <p class="address-hint">支持全国范围搜索，如「上海陆家嘴」</p>
 
       <ul
         v-if="showSuggestions && (suggestions.length > 0 || isSearching || addressQuery.trim())"

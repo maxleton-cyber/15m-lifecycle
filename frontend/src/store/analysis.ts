@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { AgentTaskResult, QuotaStatus, ReportData } from '../types'
+import type { AgentTaskResult, ReportData } from '../types'
 
 export const useAnalysisStore = defineStore('analysis', () => {
   const currentTask = ref<AgentTaskResult | null>(null)
@@ -8,7 +8,6 @@ export const useAnalysisStore = defineStore('analysis', () => {
   const aiReport = ref<string | null>(null)
   const isLoading = ref(false)
   const progressMessage = ref('')
-  const quotaStatus = ref<QuotaStatus[]>([])
 
   function setTask(task: AgentTaskResult) {
     currentTask.value = task
@@ -31,7 +30,6 @@ export const useAnalysisStore = defineStore('analysis', () => {
     aiReport,
     isLoading,
     progressMessage,
-    quotaStatus,
     setTask,
     reset,
   }

@@ -11,6 +11,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<BaiduMapSettings>(builder.Configuration.GetSection("BaiduMap"));
 builder.Services.Configure<LlmSettings>(builder.Configuration.GetSection("Llm"));
 builder.Services.Configure<AgentSettings>(builder.Configuration.GetSection("Agent"));
+builder.Services.Configure<BlindAreaSettings>(builder.Configuration.GetSection("BlindArea"));
 builder.Services.Configure<RedisSettings>(builder.Configuration.GetSection("Redis"));
 
 var redisSettings = builder.Configuration.GetSection("Redis").Get<RedisSettings>() ?? new RedisSettings();
@@ -35,6 +36,7 @@ builder.Services.AddHttpClient<IBaiduMapClient, BaiduMapClient>();
 builder.Services.AddHttpClient<IAgentService, AgentService>();
 
 builder.Services.AddSingleton<IIsochroneService, IsochroneService>();
+builder.Services.AddSingleton<IBlindAreaService, BlindAreaService>();
 builder.Services.AddSingleton<IPoiCoverageService, PoiCoverageService>();
 builder.Services.AddSingleton<IRegionService, RegionService>();
 

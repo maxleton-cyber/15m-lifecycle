@@ -53,7 +53,7 @@ public class AgentTaskWorker : BackgroundService
         await _store.SaveAsync(new AgentTaskResult(
             message.TaskId,
             AgentTaskStatus.Processing,
-            new AgentTaskProgress("processing", "正在处理…"),
+            new AgentTaskProgress("queued", "任务已开始，准备执行…"),
             null,
             null,
             null,

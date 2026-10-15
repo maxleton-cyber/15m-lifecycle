@@ -72,6 +72,21 @@ export interface BlindSpotInfo {
   suggestion: string
 }
 
+export interface BlindAreaRegion {
+  id: string
+  level: number
+  missingCategories: string[]
+  polygon: LatLng[]
+  areaM2: number
+  degraded: boolean
+}
+
+export interface BlindAreaAnalysis {
+  blindRegions: BlindAreaRegion[]
+  blindAreaRatio: number
+  averageMissingCount: number
+}
+
 export interface ReportData {
   polygonId: string
   center: LatLng
@@ -79,6 +94,7 @@ export interface ReportData {
   categories: CategoryCoverage[]
   blindSpots: BlindSpotInfo[]
   overallScore: number
+  blindArea?: BlindAreaAnalysis | null
 }
 
 export type AgentTaskStatus = 'Queued' | 'Processing' | 'Completed' | 'Failed'
@@ -97,13 +113,6 @@ export interface AgentTaskResult {
   error: string | null
   createdAt: string
   completedAt: string | null
-}
-
-export interface QuotaStatus {
-  apiName: string
-  dailyLimit: number
-  used: number
-  remaining: number
 }
 
 export interface AgentTaskRequest {

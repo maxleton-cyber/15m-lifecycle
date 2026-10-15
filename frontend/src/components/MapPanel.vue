@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
-import { createPoiIconHtml, getCategoryMeta } from '../constants/poiCategories'
+import { blindLevelStyle, createPoiIconHtml, getCategoryMeta } from '../constants/poiCategories'
 import { hasBaiduMapAk, loadBaiduMap } from '../utils/loadBaiduMap'
 import { toBd09, type CoordSystem } from '../utils/coord'
-import type { CategoryCoverage, LatLng, ReportData, SelectedLocation } from '../types'
+import type { BlindAreaRegion, CategoryCoverage, LatLng, ReportData, SelectedLocation } from '../types'
 
 const props = defineProps<{
   center: SelectedLocation | null
@@ -24,7 +24,17 @@ const mapReady = ref(false)
 let map: BMapGL.Map | null = null
 let centerOverlays: BMapGL.Overlay[] = []
 let isoPolygon: BMapGL.Polygon | null = null
+let blindOverlays: BMapGL.Overlay[] = []
 const poiOverlays = new Map<string, BMapGL.Overlay[]>()
+/** 点击命中检测用的盲区多边形（图标层在上，格子点击改由地图事件处理） */
+let blindHitRegions: BlindAreaRegion[] = []
+/** POI 点击后短暂屏蔽盲区弹窗，避免事件穿透 */
+let suppressBlindClickUntil = 0
+let mapBlindClickBound = false
+
+const Z_ISO = 10
+const Z_BLIND = 20
+const Z_POI = 500
 
 function escapeHtml(text: string): string {
   return text
@@ -101,7 +111,7 @@ async function initMap() {
 
   const defaultPoint = props.center
     ? toBaiduPoint(props.center.lat, props.center.lng)
-    : new BMapGL.Point(116.481, 39.996)
+    : new BMapGL.Point(121.5051, 31.2448)
 
   map = new BMapGL.Map(mapContainer.value, {
     enableRotate: false,
@@ -110,7 +120,7 @@ async function initMap() {
   map.centerAndZoom(defaultPoint, 16)
   map.enableScrollWheelZoom(true)
 
-  map.setMapType(BMapGL.BMAP_SATELLITE_MAP)
+  map.setMapType(BMapGL.BMAP_NORMAL_MAP)
   map.setDisplayOptions({
     poi: true,
     poiText: true,
@@ -176,6 +186,92 @@ function clearPoiOverlays() {
   poiOverlays.clear()
 }
 
+function clearBlindOverlays() {
+  if (!map) return
+  blindOverlays.forEach((o) => map!.removeOverlay(o))
+  blindOverlays = []
+  blindHitRegions = []
+}
+
+function setOverlayZ(overlay: BMapGL.Overlay, z: number) {
+  overlay.setZIndex?.(z)
+}
+
+function pointInBlindRegion(lat: number, lng: number, region: BlindAreaRegion): boolean {
+  const polygon = region.polygon
+  let inside = false
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const yi = polygon[i].lat
+    const xi = polygon[i].lng
+    const yj = polygon[j].lat
+    const xj = polygon[j].lng
+    const intersect =
+      yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi + 1e-12) + xi
+    if (intersect) inside = !inside
+  }
+  return inside
+}
+
+function findBlindRegionAt(lat: number, lng: number): BlindAreaRegion | null {
+  // 后添加的格子优先（同点重叠时取最后一个）
+  for (let i = blindHitRegions.length - 1; i >= 0; i--) {
+    if (pointInBlindRegion(lat, lng, blindHitRegions[i])) return blindHitRegions[i]
+  }
+  return null
+}
+
+function onMapBlindClick(e: BMapGL.MapEvent) {
+  if (Date.now() < suppressBlindClickUntil) return
+  const pt = e.latlng ?? e.point
+  if (!pt) return
+  const region = findBlindRegionAt(pt.lat, pt.lng)
+  if (!region) return
+  const system = getCoordSystem()
+  showBlindInfo(region, regionCenterPoint(region, system))
+}
+
+function bindMapBlindClick() {
+  if (!map || mapBlindClickBound) return
+  map.addEventListener('click', onMapBlindClick)
+  mapBlindClickBound = true
+}
+
+function markPoiClick() {
+  suppressBlindClickUntil = Date.now() + 400
+}
+
+function regionToPoints(region: BlindAreaRegion, system: CoordSystem): BMapGL.Point[] {
+  return region.polygon.map((p) => toBaiduPoint(p.lat, p.lng, system))
+}
+
+/** 格子多边形中心（用于信息窗锚点，避免锚在左下角） */
+function regionCenterPoint(region: BlindAreaRegion, system: CoordSystem): BMapGL.Point {
+  const pts = region.polygon
+  if (pts.length === 0) return toBaiduPoint(0, 0, system)
+  const lat = pts.reduce((s, p) => s + p.lat, 0) / pts.length
+  const lng = pts.reduce((s, p) => s + p.lng, 0) / pts.length
+  return toBaiduPoint(lat, lng, system)
+}
+
+function showBlindInfo(region: BlindAreaRegion, point: BMapGL.Point) {
+  if (!map) return
+  map.closeInfoWindow()
+  const missing =
+    region.missingCategories.length > 0
+      ? region.missingCategories.join('、')
+      : '—'
+  const html = `<div class="poi-popup">
+    <div>
+      <strong>盲区 · 缺 ${region.level} 类</strong><br/>
+      <span>缺失：${escapeHtml(missing)}</span><br/>
+      <small>面积约 ${Math.round(region.areaM2)} m²${
+        region.degraded ? ' · 含估算距离' : ''
+      }</small>
+    </div>
+  </div>`
+  map.openInfoWindow(new BMapGL.InfoWindow(html, { width: 260 }), point)
+}
+
 function showPoiInfo(
   point: BMapGL.Point,
   poiName: string,
@@ -206,6 +302,7 @@ function updateIsochrone() {
     map.removeOverlay(isoPolygon)
     isoPolygon = null
   }
+  clearBlindOverlays()
   clearPoiOverlays()
 
   const data = props.reportData
@@ -216,16 +313,50 @@ function updateIsochrone() {
     toBaiduPoint(p.lat, p.lng, system),
   )
 
+  // 等时圈：描边 + 极淡填充，避免与盲区灰色混脏
   isoPolygon = new BMapGL.Polygon(points, {
     strokeColor: '#7ee8c7',
     strokeWeight: 2,
     strokeOpacity: 0.9,
     fillColor: '#2d6a5a',
-    fillOpacity: 0.25,
+    fillOpacity: 0.06,
     strokeStyle: 'dashed',
   })
   map.addOverlay(isoPolygon)
+  setOverlayZ(isoPolygon, Z_ISO)
 
+  // 盲区灰色层：只绘制，不绑定点击（避免盖住设施图标点击）
+  blindHitRegions = []
+  for (const region of data.blindArea?.blindRegions ?? []) {
+    if (region.level < 1) continue
+    const polyPoints = regionToPoints(region, system)
+    if (polyPoints.length < 3) continue
+    const style = blindLevelStyle(region.level)
+    const poly = new BMapGL.Polygon(polyPoints, {
+      strokeColor: style.strokeColor,
+      strokeWeight: style.strokeWeight,
+      strokeOpacity: style.strokeOpacity,
+      fillColor: style.fillColor,
+      fillOpacity: style.fillOpacity,
+    })
+    const polyAny = poly as BMapGL.Polygon & {
+      setFillColor?: (c: string) => void
+      setFillOpacity?: (o: number) => void
+      setStrokeWeight?: (w: number) => void
+    }
+    polyAny.setFillColor?.(style.fillColor)
+    polyAny.setFillOpacity?.(style.fillOpacity)
+    polyAny.setStrokeWeight?.(style.strokeWeight)
+
+    map.addOverlay(poly)
+    setOverlayZ(poly, Z_BLIND)
+    blindOverlays.push(poly)
+    blindHitRegions.push(region)
+  }
+
+  bindMapBlindClick()
+
+  // 设施点位（最上层，优先响应点击）
   data.categories.forEach((cat: CategoryCoverage) => {
     const meta = getCategoryMeta(cat.category)
     const overlays: BMapGL.Overlay[] = []
@@ -235,9 +366,12 @@ function updateIsochrone() {
 
       const marker = new BMapGL.Marker(point)
       marker.addEventListener('click', (e) => {
+        markPoiClick()
+        e?.domEvent?.stopPropagation?.()
         e?.stopPropagation?.()
         showPoiInfo(point, poi.name, cat.label, meta.emoji, poi.address)
       })
+      setOverlayZ(marker, Z_POI)
       overlays.push(marker)
 
       const iconLabel = new BMapGL.Label(createPoiIconHtml(cat.category, 'map'), {
@@ -250,11 +384,14 @@ function updateIsochrone() {
         padding: '0',
         cursor: 'pointer',
         pointerEvents: 'auto',
+        zIndex: String(Z_POI),
       })
       iconLabel.addEventListener('click', (e) => {
-        e?.stopPropagation?.()
+        markPoiClick()
+        ;(e as Event | undefined)?.stopPropagation?.()
         showPoiInfo(point, poi.name, cat.label, meta.emoji, poi.address)
       })
+      setOverlayZ(iconLabel, Z_POI + 1)
       overlays.push(iconLabel)
     })
 
@@ -273,6 +410,7 @@ function updateVisibility() {
     overlays.forEach((overlay) => {
       if (visible.has(category)) {
         map!.addOverlay(overlay)
+        setOverlayZ(overlay, Z_POI)
       } else {
         map!.removeOverlay(overlay)
       }
@@ -288,6 +426,7 @@ onUnmounted(() => {
   map = null
   centerOverlays = []
   isoPolygon = null
+  blindOverlays = []
   poiOverlays.clear()
 })
 
@@ -314,7 +453,7 @@ watch(() => props.visibleCategories, updateVisibility, { deep: true })
   position: relative;
   width: 100%;
   height: 100%;
-  min-height: 400px;
+  min-height: 480px;
   border-radius: var(--radius-md);
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);

@@ -17,6 +17,9 @@ const blindCount = computed(
   () => props.reportData.blindSpots.filter((b) => b.isBlindSpot).length,
 )
 
+const blindAreaRatio = computed(() => props.reportData.blindArea?.blindAreaRatio ?? null)
+const avgMissing = computed(() => props.reportData.blindArea?.averageMissingCount ?? null)
+
 function renderCharts() {
   const cats = props.reportData.categories
 
@@ -110,6 +113,14 @@ watch(() => props.reportData, renderCharts, { deep: true })
         <div class="stat" :class="{ warn: blindCount > 0 }">
           <span class="stat-num">{{ blindCount }}</span>
           <span class="stat-label">盲区类别</span>
+        </div>
+        <div v-if="blindAreaRatio != null" class="stat" :class="{ warn: blindAreaRatio > 0.2 }">
+          <span class="stat-num">{{ (blindAreaRatio * 100).toFixed(0) }}%</span>
+          <span class="stat-label">盲区面积</span>
+        </div>
+        <div v-if="avgMissing != null" class="stat">
+          <span class="stat-num">{{ avgMissing.toFixed(1) }}</span>
+          <span class="stat-label">平均缺失</span>
         </div>
       </div>
     </div>

@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { createAgentTask, getAgentTask, getQuotaStatus, pollAgentTask } from '../api'
+import { createAgentTask, getAgentTask, pollAgentTask } from '../api'
 import AddressSelector from '../components/AddressSelector.vue'
 import AnalysisProgress from '../components/AnalysisProgress.vue'
 import CoordDisplay from '../components/CoordDisplay.vue'
 import MapPanel from '../components/MapPanel.vue'
 import PoiLegend from '../components/PoiLegend.vue'
-import QuotaBanner from '../components/QuotaBanner.vue'
 import ReportPanel from '../components/ReportPanel.vue'
 import { useAnalysisStore } from '../store/analysis'
 import type { CoordSystem, LatLng, SelectedLocation } from '../types'
@@ -19,8 +18,8 @@ const store = useAnalysisStore()
 const inputMode = ref<'address' | 'coords'>('address')
 const selectedLocation = ref<SelectedLocation | null>(null)
 const mouseCoords = ref<LatLng | null>(null)
-const coordLat = ref(39.996)
-const coordLng = ref(116.481)
+const coordLat = ref(31.2448)
+const coordLng = ref(121.5051)
 const coordInputSystem = ref<CoordSystem>('bd09')
 const coordPaste = ref('')
 const isApplyingCoords = ref(false)
@@ -32,12 +31,6 @@ const mapCoordSystem = computed(
 )
 
 onMounted(async () => {
-  try {
-    store.quotaStatus = await getQuotaStatus()
-  } catch {
-    /* optional */
-  }
-
   const taskId = route.query.taskId as string
   if (taskId && !store.reportData) {
     try {
@@ -155,8 +148,18 @@ async function startAnalysis() {
   }
 
   error.value = ''
-  store.isLoading = true
   store.reset()
+  store.isLoading = true
+  store.setTask({
+    taskId: '',
+    status: 'Queued',
+    progress: { stage: 'queued', message: '任务已提交，正在排队…' },
+    reportData: null,
+    aiReport: null,
+    error: null,
+    createdAt: new Date().toISOString(),
+    completedAt: null,
+  })
 
   try {
     const loc = selectedLocation.value
@@ -166,9 +169,13 @@ async function startAnalysis() {
       address: loc.address,
     })
 
-    const result = await pollAgentTask(taskId, (task) => {
-      store.setTask(task)
-    })
+    const result = await pollAgentTask(
+      taskId,
+      (task) => {
+        store.setTask(task)
+      },
+      800,
+    )
 
     store.setTask(result)
     store.isLoading = false
@@ -183,8 +190,6 @@ async function startAnalysis() {
 
 <template>
   <div class="dashboard">
-    <QuotaBanner :quotas="store.quotaStatus" />
-
     <header class="hero">
       <p class="eyebrow">15 分钟步行可达 · 真实路网</p>
       <h1>生活圈体检助手</h1>
@@ -247,7 +252,7 @@ async function startAnalysis() {
                   id="coord-paste"
                   v-model="coordPaste"
                   type="text"
-                  placeholder="粘贴 116.481,39.996 或 39.996,116.481"
+                  placeholder="粘贴 121.5051,31.2448 或 31.2448,121.5051"
                 />
                 <button type="button" class="paste-btn" @click="fillFromPaste">填入</button>
               </div>
@@ -260,7 +265,7 @@ async function startAnalysis() {
                   v-model.number="coordLat"
                   type="number"
                   step="0.000001"
-                  placeholder="如 39.996000"
+                  placeholder="如 31.244800"
                 />
               </div>
               <div class="field">
@@ -270,7 +275,7 @@ async function startAnalysis() {
                   v-model.number="coordLng"
                   type="number"
                   step="0.000001"
-                  placeholder="如 116.481000"
+                  placeholder="如 121.505100"
                 />
               </div>
             </div>
@@ -304,35 +309,33 @@ async function startAnalysis() {
             {{ store.isLoading ? '体检中…' : '开始体检' }}
           </button>
           <p v-if="error" class="error" role="alert">{{ error }}</p>
-          <AnalysisProgress
-            :is-loading="store.isLoading"
-            :progress="store.currentTask?.progress ?? null"
-            :stage="store.currentTask?.progress?.stage"
-          />
         </section>
       </aside>
 
       <section class="map-area" aria-label="地图">
         <h2 class="map-title">地图预览</h2>
-        <MapPanel
-          :center="selectedLocation"
-          :report-data="store.reportData"
-          :visible-categories="visibleCategories"
-          :map-coord-system="mapCoordSystem"
-          @mousemove="onMapMousemove"
-          @mouseleave="onMapMouseleave"
-        />
-        <CoordDisplay
-          :mouse-coords="mouseCoords"
-          :center-coords="selectedLocation"
-          :display-coord-system="mapCoordSystem"
-        />
-        <PoiLegend
-          v-if="store.reportData"
-          :categories="store.reportData.categories"
-          :visible="visibleCategories"
-          @update:visible="visibleCategories = $event"
-        />
+        <div class="map-stage">
+          <MapPanel
+            :center="selectedLocation"
+            :report-data="store.reportData"
+            :visible-categories="visibleCategories"
+            :map-coord-system="mapCoordSystem"
+            @mousemove="onMapMousemove"
+            @mouseleave="onMapMouseleave"
+          />
+          <CoordDisplay
+            :mouse-coords="mouseCoords"
+            :center-coords="selectedLocation"
+            :display-coord-system="mapCoordSystem"
+          />
+          <PoiLegend
+            v-if="store.reportData"
+            :categories="store.reportData.categories"
+            :visible="visibleCategories"
+            :blind-area="store.reportData.blindArea"
+            @update:visible="visibleCategories = $event"
+          />
+        </div>
       </section>
     </div>
 
@@ -357,6 +360,11 @@ async function startAnalysis() {
         :ai-report="store.aiReport"
       />
     </section>
+
+    <AnalysisProgress
+      :open="store.isLoading"
+      :progress="store.currentTask?.progress ?? null"
+    />
   </div>
 </template>
 
@@ -404,7 +412,7 @@ async function startAnalysis() {
 @media (min-width: 900px) {
   .workspace {
     grid-template-columns: 380px 1fr;
-    min-height: 480px;
+    min-height: calc(100dvh - 140px);
   }
 }
 
@@ -617,14 +625,50 @@ async function startAnalysis() {
 .map-area {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
   padding: 1rem;
-  min-height: 400px;
+  min-height: 520px;
+  flex: 1;
+}
+
+@media (min-width: 900px) {
+  .map-area {
+    min-height: 0;
+    height: 100%;
+    max-height: calc(100dvh - 140px);
+  }
 }
 
 .map-title {
   font-size: 0.8125rem;
   color: var(--mist);
+  flex-shrink: 0;
+}
+
+.map-stage {
+  position: relative;
+  flex: 1;
+  min-height: 480px;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 900px) {
+  .map-stage {
+    min-height: 0;
+  }
+}
+
+.map-stage :deep(.map-panel) {
+  flex: 1;
+  min-height: 480px;
+  height: 100%;
+}
+
+@media (min-width: 900px) {
+  .map-stage :deep(.map-panel) {
+    min-height: 0;
+  }
 }
 
 .results-section {

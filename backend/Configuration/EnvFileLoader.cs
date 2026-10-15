@@ -9,6 +9,12 @@ public static class EnvFileLoader
     private static readonly (string EnvKey, string ConfigKey)[] Mappings =
     [
         ("BAIDU_MAP_AK", "BaiduMap__Ak"),
+        ("BAIDU_MAP_MAX_QPS", "BaiduMap__MaxQps"),
+        ("BAIDU_ROUTE_MATRIX_MAX_QPS", "BaiduMap__RouteMatrixMaxQps"),
+        ("BAIDU_ROUTE_MATRIX_BATCH_INTERVAL_MS", "BaiduMap__RouteMatrixBatchIntervalMs"),
+        ("BAIDU_POI_SEARCH_DAILY_LIMIT", "BaiduMap__PoiSearchDailyLimit"),
+        ("BAIDU_GEOCODE_DAILY_LIMIT", "BaiduMap__GeocodeDailyLimit"),
+        ("BAIDU_ROUTE_MATRIX_DAILY_LIMIT", "BaiduMap__RouteMatrixDailyLimit"),
         ("LLM_API_BASE_URL", "Llm__ApiBaseUrl"),
         ("LLM_API_KEY", "Llm__ApiKey"),
         ("LLM_MODEL", "Llm__Model"),
