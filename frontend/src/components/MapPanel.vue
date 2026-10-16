@@ -388,7 +388,8 @@ function updateIsochrone() {
       })
       iconLabel.addEventListener('click', (e) => {
         markPoiClick()
-        ;(e as Event | undefined)?.stopPropagation?.()
+        e?.domEvent?.stopPropagation?.()
+        e?.stopPropagation?.()
         showPoiInfo(point, poi.name, cat.label, meta.emoji, poi.address)
       })
       setOverlayZ(iconLabel, Z_POI + 1)

@@ -39,7 +39,6 @@ declare namespace BMapGL {
   class Label extends Overlay {
     constructor(content: string, opts?: { position?: Point; offset?: Size })
     setStyle(styles: Record<string, string>): void
-    addEventListener(event: string, handler: (e?: Event) => void): void
   }
 
   class InfoWindow extends Overlay {
@@ -81,7 +80,7 @@ declare namespace BMapGL {
   }
 
   abstract class Overlay {
-    addEventListener(event: string, handler: (e?: Event) => void): void
+    addEventListener(event: string, handler: (e?: MapEvent) => void): void
     setZIndex?(zIndex: number): void
   }
 
